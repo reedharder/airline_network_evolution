@@ -27,12 +27,7 @@ except NameError:
     
     os.chdir("C:/Users/d29905P/Dropbox/m106_backup/m106proj/")
 
-#helper functions to count edges and nodes
-def nx_edge_count(G):
-        return len(G.edges())
-def nx_node_count(G):
-        return len(G.nodes())
-   
+
 
 # optional sets of nodes test network
 small_node_sets = {'ope35_sansHLN' : ['ATL', 'BOS', 'BWI', 'CLE', 'CLT', 'CVG', 'DCA', 'DEN', 'DFW', 'DTW', 'EWR', 'FLL', 'IAD', 'IAH', 'JFK', 'LAS', 'LAX', 'LGA', 'MCO', 'MDW', 'MEM', 'MIA', 'MSP', 'ORD', 'PDX', 'PHL', 'PHX', 'PIT', 'SAN', 'SEA', 'SFO', 'SLC', 'STL', 'TPA'],
@@ -50,10 +45,14 @@ port_info =pd.read_csv("t100_2016_12ports.csv")[['ORIGIN','ORIGIN_STATE_ABR','OR
 main feature construction file
 '''
 def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market_profile_%sm%s.csv",year = 2007, months=range(1,13), \
-    t100_fn="../bts_raw_csv/T100_SEGMENTS_%s.csv",p52_fn="../bts_raw_csv/SCHEDULE_P52_%s.csv", non_directional=True, t100_avgd_fn="processed_data/t100_avgd_m%s.csv", merge_HP=True, merge_NW=True, \
-    t100_summed_fn = 'processed_data/t100_summed_m%s.csv', t100_craft_avg_fn='processed_data/t100_craft_avg_m%s.csv',\
+    t100_fn="../bts_raw_csv/T100_SEGMENTS_%s.csv",p52_fn="../bts_raw_csv/SCHEDULE_P52_%s.csv", non_directional=True,  merge_HP=True, merge_NW=True, \
     ignore_mkts = [], merger_carriers=True,  craft_freq_cuttoff = .01,max_competitors=100,top_n_carriers = 15,\
-    freq_cuttoff = .5, ms_cuttoff=.05, time_step_size = 'MONTH',yearly_regression_file = "../processed_data/market_profile_%s.csv", fs_cuttoff = .05,db1b_fn="DB1B_MARKETS_%s_Q%s.csv", rc_name = 'related_carriers_dict_%s.csv', only_big_carriers=False, airports = TAFM2017AirportList.origin.tolist() , airport_data = TAFM2017AirportList, node_feature_list = [(nx.degree_centrality,'DAILY_FREQ','DEG_CENT')], edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')],  full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_node_count,'DAILY_FREQ','NODE_COUNT')], port_info = port_info, lat_dict = lat_dict, lon_dict = lon_dict ):
+    freq_cuttoff = .5, ms_cuttoff=.05, time_step_size = 'MONTH',\
+    yearly_regression_file = "../processed_data/market_profile_%s.csv", fs_cuttoff = .05,\
+    db1b_fn="DB1B_MARKETS_%s_Q%s.csv", rc_name = 'related_carriers_dict_%s.csv', only_big_carriers=False,\
+    airports = TAFM2017AirportList.origin.tolist() ,\
+    node_feature_list = [], edge_feature_list = [],  full_feature_list=[],\
+    port_info = port_info, lat_dict = lat_dict, lon_dict = lon_dict ):
     
     # defaults for debugging
     '''
@@ -80,15 +79,14 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     ms_cuttoff=.05
     fs_cuttoff = .05
     only_big_carriers=False
-    airports = TAFM2017AirportList.origin.tolist()
-    airport_data = TAFM2017AirportList
+    airports = small_node_sets['top100_2014']
     rc_name = 'related_carriers_dict_%s.csv'
     node_feature_list = [(nx.degree_centrality,'DAILY_FREQ','DEG_CENT')] #if changed, need to update nan file
     edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')] #if changed, need to update nan file
     full_feature_list  = [(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_node_count,'DAILY_FREQ','NODE_COUNT')] #if changed, need to update nan file
     
     '''
-    print("2007 data:")
+    print("%s data:" % year)
     #dictionary of month to quarter
     month_to_q = {1:1,
                   2:1,
@@ -102,6 +100,10 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
                   10:4,
                   11:4,
                   12:4}
+    q_to_first_month = {1:1,
+                  2:4,
+                  3:7,
+                  4:10}
     #days per month
     common_year_days_month = {1:31,
                        2:28,
@@ -131,6 +133,8 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
         
     # select day to month dict
     days_month_dict = leap_year_days_month if leap else common_year_days_month
+    #derive quarter to month dict
+    days_quarter_dict = {q:sum([days_month_dict[m] for m in range(1,13) if month_to_q[m] == q]) for q in range(1,5)}
     #states dict
     states_dict_to_num = {'PR':50,'VI':51,'TT':52}
     with open("states_abbrev.txt",'r') as infile:
@@ -177,11 +181,11 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
         relevant_t100['UNIQUE_CARRIER']=relevant_t100['UNIQUE_CARRIER'].replace('NW','DL') # WHERE MONTH in quarter 1
 
     #monthly airport data
-    airport_db = relevant_t100.groupby(['ORIGIN','MONTH']).aggregate({'PASSENGERS':np.sum,'DEPARTURES_PERFORMED':np.sum,'SEATS':np.sum}).reset_index()
+    airport_db = relevant_t100.groupby(['ORIGIN',time_step_size]).aggregate({'PASSENGERS':np.sum,'DEPARTURES_PERFORMED':np.sum,'SEATS':np.sum}).reset_index()
     ##airport_db =airport_db.merge(airport_coordinates[['ORIGIN','LAT','LON']],how='left',on='ORIGIN')
     airport_db = airport_db.rename(columns={'PASSENGERS':'DEP_PASSENGERS_AIRPORT','DEPARTURES_PERFORMED':'ENPLANEMENTS','SEATS':'DEP_CAPACITY_AIRPORT'})
     #carrier airport stats
-    carrier_airport_db = relevant_t100.groupby(['UNIQUE_CARRIER','ORIGIN','MONTH']).aggregate({'PASSENGERS':np.sum,'DEPARTURES_PERFORMED':np.sum,'SEATS':np.sum}).reset_index()
+    carrier_airport_db = relevant_t100.groupby(['UNIQUE_CARRIER','ORIGIN',time_step_size]).aggregate({'PASSENGERS':np.sum,'DEPARTURES_PERFORMED':np.sum,'SEATS':np.sum}).reset_index()
     carrier_airport_db = carrier_airport_db.rename(columns={'PASSENGERS':'DEP_PASSENGERS_AIRPORT','DEPARTURES_PERFORMED':'ENPLANEMENTS','SEATS':'DEP_CAPACITY_AIRPORT'})
    
         
@@ -196,17 +200,21 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     t100_summed['AIR_HOURS']=(t100_summed['AIR_TIME']/60)
     t100_summed['FLIGHT_TIME']=t100_summed['AIR_HOURS']/t100_summed['DEPARTURES_PERFORMED']
     #get frequency per day
-    days_per_month = t100_summed['MONTH'].apply(lambda row: days_month_dict[int(row)]) 
+    days_per_month= t100_summed['MONTH'].apply(lambda row: days_month_dict[int(row)]) 
+    
+  
     t100_summed['DAILY_FREQ']=t100_summed['DEPARTURES_SCHEDULED']/days_per_month
     ##get average number available seats per flight
     t100_summed['SEATS_PER_FLIGHT'] = t100_summed['SEATS']/t100_summed['DEPARTURES_PERFORMED']  #CHECK NUMBERS
+    
+    #filter empty flights (need more than half a passenger and half a departure planned in a whole month )
+    t100_summed = t100_summed[t100_summed['PASSENGERS']>0.5]
+    t100_summed = t100_summed[t100_summed['DEPARTURES_SCHEDULED']>0.5] 
     #get seats per day
     t100_summed['SEATS'] = t100_summed['SEATS']/days_per_month
     t100_summed['PASSENGERS'] = t100_summed['PASSENGERS']/days_per_month
     
-    #filter empty flights
-    t100_summed = t100_summed[t100_summed['PASSENGERS']>0.5]
-    t100_summed = t100_summed[t100_summed['DEPARTURES_SCHEDULED']>0.5] 
+    
     #additional filters: frequency, unrealistic seats per flight 
     t100_summed = t100_summed[t100_summed['DAILY_FREQ']>=craft_freq_cuttoff]
     #check for extreme seat numbers
@@ -217,21 +225,22 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     
     
     
-    # calculate average airtime per carrier per directional segment across craft types, weighted by frequency of constituent aircraft types
-    grpby=['UNIQUE_CARRIER','BI_MARKET','ORIGIN','DEST','QUARTER','MONTH']
+    # calculate average airtime per carrier per directional segment across craft types (and months within a quarter if requested), weighted by frequency of constituent aircraft types
+    if time_step_size=='QUARTER':
+        grpby=['UNIQUE_CARRIER','BI_MARKET','ORIGIN','DEST','QUARTER']
+    else:
+        grpby=['UNIQUE_CARRIER','BI_MARKET','ORIGIN','DEST','QUARTER','MONTH']
     wavgs = weighted_average(t100_summed[grpby + ['FLIGHT_TIME','DAILY_FREQ']],'FLIGHT_TIME','DAILY_FREQ',grpby,'FLIGHT_TIME_CARRIER_WAVG')
     t100_summed = t100_summed.merge(wavgs, how='left', on=grpby)
-    # calculate average seats per flight per carrier per directional segment across craft types, weighted by frequency of constituent aircraft types
-    grpby=['UNIQUE_CARRIER','BI_MARKET','ORIGIN','DEST','QUARTER','MONTH']
+    # calculate average seats per flight per carrier per directional segment across craft types (and months within a quarter if requested),  weighted by frequency of constituent aircraft types
     wavgs = weighted_average(t100_summed[grpby + ['SEATS_PER_FLIGHT','DAILY_FREQ']],'SEATS_PER_FLIGHT','DAILY_FREQ',grpby,'SEATS_PER_FLIGHT_CARRIER_WAVG')
     t100_summed = t100_summed.merge(wavgs, how='left', on=grpby)
-     # calculate averages over craft 
-   
+    
+     # calculate averages over craft    
     t100fields =['YEAR','QUARTER','MONTH','BI_MARKET','A1','A2','ORIGIN','DEST','UNIQUE_CARRIER','SEATS','DEPARTURES_SCHEDULED','DEPARTURES_PERFORMED','SEATS_PER_FLIGHT_CARRIER_WAVG','PASSENGERS','DISTANCE','DAILY_FREQ','FLIGHT_TIME_CARRIER_WAVG']
     #group by carrier, directional market, month, aggregate other fields appropriately
     t100_craft_avg = t100_summed[t100fields].groupby(['UNIQUE_CARRIER','BI_MARKET','A1','A2','ORIGIN','DEST','YEAR','QUARTER','MONTH']).aggregate({'DEPARTURES_SCHEDULED':np.sum,'DEPARTURES_PERFORMED':np.sum,'SEATS':np.sum,'FLIGHT_TIME_CARRIER_WAVG':np.mean,'SEATS_PER_FLIGHT_CARRIER_WAVG':np.mean, 'PASSENGERS':np.sum,'DISTANCE':np.mean, 'DAILY_FREQ':np.sum}).reset_index()  
-    #save file of t100 summed over months and averaged over craft, to check passenger equivalence between market directions
-  
+    #remove file of t100 
     del t100_summed
     
     #average values between segments sharing a bidirectional market if requested
@@ -247,12 +256,32 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     t100_craft_avg = t100_craft_avg[t100_craft_avg['DAILY_FREQ']>=freq_cuttoff]
     print("removed %s rows with less than daily frequency cuttoff" % (count_pre_filter-len(t100_craft_avg)))
     
+    #aggregate by month if requested
     if time_step_size=='QUARTER':
-        t100_craft_avg.drop('MONTH',1).groupby('UNIQUE_CARRIER','BI_MARKET','A1','A2','YEAR','QUARTER').aggregate({'DEPARTURES_SCHEDULED':'sum',related_carriers_dict_string})
+        #get weighted avg (by days per month) of daily freq accross months in quarter
+        t100_craft_avg['DAYS_PER_MONTH']= t100_craft_avg['MONTH'].apply(lambda row: days_month_dict[int(row)]) 
+        grpby=['UNIQUE_CARRIER','BI_MARKET','A1','A2','YEAR','QUARTER']
+        wavgs = weighted_average(t100_craft_avg[grpby + ['DAILY_FREQ','DAYS_PER_MONTH']],'DAILY_FREQ','DAYS_PER_MONTH',grpby,'DAILY_FREQ_new')
+        t100_craft_avg = t100_craft_avg.merge(wavgs, how='left', on=grpby)
+        #same, for daily passengers
+        wavgs = weighted_average(t100_craft_avg[grpby + ['PASSENGERS','DAYS_PER_MONTH']],'PASSENGERS','DAYS_PER_MONTH',grpby,'PASSENGERS_new')
+        t100_craft_avg = t100_craft_avg.merge(wavgs, how='left', on=grpby)
+    
+        #same, for daily seats
+        wavgs = weighted_average(t100_craft_avg[grpby + ['SEATS','DAYS_PER_MONTH']],'SEATS','DAYS_PER_MONTH',grpby,'SEATS_new')
+        t100_craft_avg = t100_craft_avg.merge(wavgs, how='left', on=grpby)
+        
+        #rename columns
+        for col in ['DAILY_FREQ','SEATS','PASSENGERS']:
+            t100_craft_avg = t100_craft_avg.drop(col,1)
+            t100_craft_avg = t100_craft_avg.rename(columns={col+'_new':col})
+    
+        agg_dict={'DEPARTURES_SCHEDULED':'sum','DEPARTURES_PERFORMED':'sum','SEATS':'mean','PASSENGERS':'mean','DISTANCE':'mean','DAILY_FREQ':'mean','SEATS_PER_FLIGHT_CARRIER_WAVG':'mean','FLIGHT_TIME_CARRIER_WAVG':'mean'}
+        t100_craft_avg=t100_craft_avg.drop('MONTH',1).groupby(['UNIQUE_CARRIER','BI_MARKET','A1','A2','YEAR','QUARTER']).aggregate(agg_dict).reset_index()
     
     
     #add presence indicator
-    t100_craft_avg['SEG_MONTH_PRESENCE'] = 1
+    t100_craft_avg['SEG_PRESENCE'] = 1
     
     
     # get top carriers
@@ -265,12 +294,17 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     # get great circle distance between all pairs
     txtpairs_df['GC_DISTANCE']=txtpairs_df.apply(lambda row: haversine(lon_dict[row.A1][0],lat_dict[row.A1][0],lon_dict[row.A2][0],lat_dict[row.A2][0]), axis=1 )   
     segs =  pd.concat([txtpairs_df]*12)
-    segs['MONTH'] = np.repeat(list(range(1,13)),len(txtpairs))
+    if time_step_size=='QUARTER':
+        segs =  pd.concat([txtpairs_df]*4)
+        segs['QUARTER'] = np.repeat(list(range(1,5)),len(txtpairs))
+    else:
+        segs =  pd.concat([txtpairs_df]*12)
+        segs['MONTH'] = np.repeat(list(range(1,13)),len(txtpairs))
     
      #get enplanements data for airports
-    segs = pd.merge(segs, airport_db[['ORIGIN','ENPLANEMENTS','MONTH']], how='left',left_on=['MONTH','A1'],right_on=['MONTH','ORIGIN']).rename(columns={'ENPLANEMENTS':'ENPL_A1'})
+    segs = pd.merge(segs, airport_db[['ORIGIN','ENPLANEMENTS',time_step_size]], how='left',left_on=[time_step_size,'A1'],right_on=[time_step_size,'ORIGIN']).rename(columns={'ENPLANEMENTS':'ENPL_A1'})
     del segs['ORIGIN']
-    segs = pd.merge(segs, airport_db[['ORIGIN','ENPLANEMENTS','MONTH']], how='left',left_on=['MONTH','A2'],right_on=['MONTH','ORIGIN']).rename(columns={'ENPLANEMENTS':'ENPL_A2'})
+    segs = pd.merge(segs, airport_db[['ORIGIN','ENPLANEMENTS',time_step_size]], how='left',left_on=[time_step_size,'A2'],right_on=[time_step_size,'ORIGIN']).rename(columns={'ENPLANEMENTS':'ENPL_A2'})
     del segs['ORIGIN']
     segs = segs.fillna(0)
     segs['A1_LARGER'] = (segs.ENPL_A1 >segs.ENPL_A2)
@@ -279,7 +313,7 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     segs['A_SMALLER'] = segs.A2*segs.A1_LARGER + segs.A1*np.invert(segs.A1_LARGER)
     del segs['ENPL_A1'],  segs['ENPL_A2'],  segs['A1_LARGER']
     # add larger airport data
-    segs = segs.merge(airport_db,how='left',left_on=['MONTH','A_LARGER'],right_on=['MONTH','ORIGIN'])
+    segs = segs.merge(airport_db,how='left',left_on=[time_step_size,'A_LARGER'],right_on=[time_step_size,'ORIGIN'])
     del segs['ORIGIN']
     segs = segs.fillna(0)
     segs = segs.merge(airport_coordinates[['ORIGIN','LAT','LON']],how='left',left_on=['A_LARGER'],right_on=['ORIGIN'])
@@ -289,7 +323,7 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     
     segs.rename(columns={col:col+'_LARGER' for col in ['DEP_PASSENGERS_AIRPORT','ENPLANEMENTS','DEP_CAPACITY_AIRPORT','LAT','LON','ORIGIN_STATE_ABR','ORIGIN_CITY_MARKET_ID']},inplace=True)
     #smaller airport data
-    segs = segs.merge(airport_db,how='left',left_on=['MONTH','A_SMALLER'],right_on=['MONTH','ORIGIN'])
+    segs = segs.merge(airport_db,how='left',left_on=[time_step_size,'A_SMALLER'],right_on=[time_step_size,'ORIGIN'])
     del segs['ORIGIN']
     segs = segs.fillna(0)
     segs = segs.merge(airport_coordinates[['ORIGIN','LAT','LON']],how='left',left_on=['A_SMALLER'],right_on=['ORIGIN'])
@@ -312,17 +346,17 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     print("creating carrier airport node data...")
     print("creating airport node data...")
     # create base data frame (all segs, all months, all carriers)
-    segs_cr =  pd.concat([segs[['A1','A2','MONTH']]]*min(top_n_carriers,len(carrier_df)))
+    segs_cr =  pd.concat([segs[['A1','A2',time_step_size]]]*min(top_n_carriers,len(carrier_df)))
     segs_cr['UNIQUE_CARRIER'] = np.repeat(top_carriers,len(segs))
     
     carrier_airport_db['ORIGIN'] = carrier_airport_db['ORIGIN'].apply(lambda x: nodes_dict_to_num[x],1)
     cols = carrier_airport_db.columns.tolist()
-    cols.remove('MONTH')
+    cols.remove(time_step_size)
     cols.remove('UNIQUE_CARRIER')
     #get enplanements data for carrier airports
-    segs_cr = pd.merge(segs_cr, carrier_airport_db[['ORIGIN','UNIQUE_CARRIER','ENPLANEMENTS','MONTH']], how='left',left_on=['MONTH','A1','UNIQUE_CARRIER',],right_on=['MONTH','ORIGIN','UNIQUE_CARRIER',]).rename(columns={'ENPLANEMENTS':'ENPL_A1'})
+    segs_cr = pd.merge(segs_cr, carrier_airport_db[['ORIGIN','UNIQUE_CARRIER','ENPLANEMENTS',time_step_size]], how='left',left_on=[time_step_size,'A1','UNIQUE_CARRIER',],right_on=[time_step_size,'ORIGIN','UNIQUE_CARRIER',]).rename(columns={'ENPLANEMENTS':'ENPL_A1'})
     del segs_cr['ORIGIN']
-    segs_cr = pd.merge(segs_cr, carrier_airport_db[['ORIGIN','UNIQUE_CARRIER','ENPLANEMENTS','MONTH']], how='left',left_on=['MONTH','A2','UNIQUE_CARRIER',],right_on=['MONTH','ORIGIN','UNIQUE_CARRIER',]).rename(columns={'ENPLANEMENTS':'ENPL_A2'})
+    segs_cr = pd.merge(segs_cr, carrier_airport_db[['ORIGIN','UNIQUE_CARRIER','ENPLANEMENTS',time_step_size]], how='left',left_on=[time_step_size,'A2','UNIQUE_CARRIER',],right_on=[time_step_size,'ORIGIN','UNIQUE_CARRIER',]).rename(columns={'ENPLANEMENTS':'ENPL_A2'})
     del segs_cr['ORIGIN']
     segs_cr['A1_LARGER'] = (segs_cr.ENPL_A1 >segs_cr.ENPL_A2)
     #get larger and smaller airports
@@ -330,12 +364,12 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     segs_cr['ACR_SMALLER'] = segs_cr.A2*segs_cr.A1_LARGER + segs_cr.A1*np.invert(segs_cr.A1_LARGER)
     del segs_cr['ENPL_A1'],  segs_cr['ENPL_A2'],  segs_cr['A1_LARGER']
     #larger airport data
-    segs_cr = segs_cr.merge(carrier_airport_db,how='left',left_on=['MONTH','ACR_LARGER','UNIQUE_CARRIER'],right_on=['MONTH','ORIGIN','UNIQUE_CARRIER'])
+    segs_cr = segs_cr.merge(carrier_airport_db,how='left',left_on=[time_step_size,'ACR_LARGER','UNIQUE_CARRIER'],right_on=[time_step_size,'ORIGIN','UNIQUE_CARRIER'])
     del segs_cr['ORIGIN']
     segs_cr.rename(columns={col:col+'_LARGER_ACR' for col in cols},inplace=True)
   
     #smaller airport data
-    segs_cr = segs_cr.merge(carrier_airport_db,how='left',left_on=['MONTH','ACR_SMALLER','UNIQUE_CARRIER'],right_on=['MONTH','ORIGIN','UNIQUE_CARRIER'])
+    segs_cr = segs_cr.merge(carrier_airport_db,how='left',left_on=[time_step_size,'ACR_SMALLER','UNIQUE_CARRIER'],right_on=[time_step_size,'ORIGIN','UNIQUE_CARRIER'])
     del segs_cr['ORIGIN']
     segs_cr.rename(columns={col:col+'_SMALLER_ACR' for col in cols},inplace=True)
     segs_cr['AVG_ENPLANEMENTS_ACR'] = segs_cr[['ENPLANEMENTS_LARGER_ACR','ENPLANEMENTS_SMALLER_ACR']].mean(axis=1)
@@ -351,7 +385,7 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     del t100_craft_avg['BI_MARKET']
     for col in ['A1','A2']:
          t100_craft_avg[col] = t100_craft_avg[col].apply(lambda x: nodes_dict_to_num[x],1)
-    grouped = t100_craft_avg.groupby(['MONTH','A1','A2'])
+    grouped = t100_craft_avg.groupby([time_step_size,'A1','A2'])
         
     #market month stats
     t100_craft_avg['SEG_PLAYERS'] = grouped['UNIQUE_CARRIER'].transform('count')
@@ -364,7 +398,7 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     #shares, load factors
     t100_craft_avg['SEG_PAX_SHARE'] =  t100_craft_avg['PASSENGERS']/t100_craft_avg['SEG_PAX']
     t100_craft_avg['SEG_PAX_SHARE_SQ'] =t100_craft_avg['SEG_PAX_SHARE']**2
-    t100_craft_avg['SEG_HHI'] = (t100_craft_avg.groupby(['A1','A2','MONTH'])['SEG_PAX_SHARE_SQ']).transform('sum')
+    t100_craft_avg['SEG_HHI'] = (t100_craft_avg.groupby(['A1','A2',time_step_size])['SEG_PAX_SHARE_SQ']).transform('sum')
     del t100_craft_avg['SEG_PAX_SHARE_SQ']
     t100_craft_avg['SEG_FREQ_SHARE'] = t100_craft_avg['DAILY_FREQ']/t100_craft_avg['SEG_FREQ']
     t100_craft_avg['SEG_CAPACITY_SHARE'] =  t100_craft_avg['SEATS']/t100_craft_avg['SEG_SEATS']
@@ -379,7 +413,7 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     t100_craft_avg['IS_LOWCOST'] = np.where(t100_craft_avg['UNIQUE_CARRIER'].isin(low_cost_carriers),1,0)
     t100_craft_avg['MAIN_LINE'] = np.where(t100_craft_avg['UNIQUE_CARRIER'].isin(mainline_carriers),1,0)
     #at least one low cost or main line on segment
-    grouped = t100_craft_avg.groupby(['MONTH','A1','A2'])
+    grouped = t100_craft_avg.groupby([time_step_size,'A1','A2'])
     t100_craft_avg['SEG_LOWCOST'] = grouped['IS_LOWCOST'].transform('sum')
     t100_craft_avg['SEG_LOWCOST']=  np.clip(t100_craft_avg['SEG_LOWCOST'],0,1)
     t100_craft_avg['SEG_MAIN_LINE'] = grouped['MAIN_LINE'].transform('sum')
@@ -388,40 +422,39 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     #create desired node features    
     print("creating node features...")
     for networkx_func, edge_attr, feature_name in node_feature_list:
-        segs_cr = create_node_network_feature(t100_craft_avg,segs_cr,networkx_func,edge_attr,feature_name)
+        segs_cr = create_node_network_feature(t100_craft_avg,segs_cr,networkx_func,edge_attr,feature_name,time_step_size)
     
     #create desired edge features
     print("creating edge features...")
     for networkx_func, edge_attr, feature_name in edge_feature_list:
-        t100_craft_avg = create_edge_network_feature(t100_craft_avg,networkx_func,edge_attr,feature_name)
+        t100_craft_avg = create_edge_network_feature(t100_craft_avg,networkx_func,edge_attr,feature_name,time_step_size)
     
     
     # create desired carrier network features
     print("creating full network features...")
     
     for networkx_func, edge_attr, feature_name in full_feature_list:
-        t100_craft_avg = create_full_network_feature(t100_craft_avg,networkx_func,edge_attr,feature_name)
+        t100_craft_avg = create_full_network_feature(t100_craft_avg,networkx_func,edge_attr,feature_name,time_step_size)
     t100_craft_avg['EDGE_NODE_RATIO'] = t100_craft_avg['EDGE_COUNT']/ t100_craft_avg['NODE_COUNT']
-    t100_craft_avg['CARRIER_FLIGHTS'] = t100_craft_avg.groupby(['UNIQUE_CARRIER','MONTH'])['DAILY_FREQ'].transform('sum')
-    t100_craft_avg['CARRIER_PAX'] = t100_craft_avg.groupby(['UNIQUE_CARRIER','MONTH'])['PASSENGERS'].transform('sum')
-    t100_craft_avg['CARRIER_SEATS'] = t100_craft_avg.groupby(['UNIQUE_CARRIER','MONTH'])['SEATS'].transform('sum')
+    t100_craft_avg['CARRIER_FLIGHTS'] = t100_craft_avg.groupby(['UNIQUE_CARRIER',time_step_size])['DAILY_FREQ'].transform('sum')
+    t100_craft_avg['CARRIER_PAX'] = t100_craft_avg.groupby(['UNIQUE_CARRIER',time_step_size])['PASSENGERS'].transform('sum')
+    t100_craft_avg['CARRIER_SEATS'] = t100_craft_avg.groupby(['UNIQUE_CARRIER',time_step_size])['SEATS'].transform('sum')
     t100_craft_avg['CARRIER_SEATS_FLIGHT_RATIO'] = t100_craft_avg['CARRIER_SEATS']/t100_craft_avg['CARRIER_FLIGHTS']
        
     #merge with airport and segment data
     airport_db['ORIGIN'] =  airport_db['ORIGIN'].apply(lambda x: nodes_dict_to_num[x],1)
-    t100_craft_avg  = t100_craft_avg.merge(airport_db[['ORIGIN','MONTH','ENPLANEMENTS']], how='left', left_on=['A1','MONTH'], right_on=['ORIGIN','MONTH'])
+    t100_craft_avg  = t100_craft_avg.merge(airport_db[['ORIGIN',time_step_size,'ENPLANEMENTS']], how='left', left_on=['A1',time_step_size], right_on=['ORIGIN',time_step_size])
     t100_craft_avg.rename(columns={"ENPLANEMENTS":'E1'}, inplace=True)
-  
-    t100_craft_avg  = t100_craft_avg.merge(airport_db[['ORIGIN','MONTH','ENPLANEMENTS']], how='left', left_on=['A2','MONTH'], right_on=['ORIGIN','MONTH'])
+    del t100_craft_avg['ORIGIN']
+    t100_craft_avg  = t100_craft_avg.merge(airport_db[['ORIGIN',time_step_size,'ENPLANEMENTS']], how='left', left_on=['A2',time_step_size], right_on=['ORIGIN',time_step_size])
     t100_craft_avg.rename(columns={"ENPLANEMENTS":'E2'}, inplace=True)
-   
+    del t100_craft_avg['ORIGIN']
     t100_craft_avg['AVG_PORT'] =   t100_craft_avg[['E1','E2']].mean(axis=1)
     
-    ##t100_craft_avg  = t100_craft_avg.merge(segs_cr, how='left', on=['A1','A2','MONTH','UNIQUE_CARRIER'])
-    
+   
     #create desired carrier network features
     #average larger airport size served, average smaller airport size served, weighted by DAILY FREQ
-    grpby=['UNIQUE_CARRIER','MONTH']
+    grpby=['UNIQUE_CARRIER',time_step_size]
     wavgs = weighted_average(t100_craft_avg,'AVG_PORT','DAILY_FREQ',grpby,'CARRIER_WAVG_PORT_SIZE')
     t100_craft_avg = t100_craft_avg.merge(wavgs, how='left', on=grpby) 
     del t100_craft_avg['AVG_PORT']
@@ -445,22 +478,22 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     col_types = pd.read_csv("col_types.txt",sep='\s+')
     print("merging market data...")
     #merge time data
-    gby = ['MONTH']
-    segs_cr = segs_cr.merge(t100_craft_avg[gby+ ['YEAR','QUARTER']].groupby(gby).aggregate(np.mean).reset_index(),how='left',on=gby)
+    gby = [time_step_size]
+    segs_cr = segs_cr.merge(t100_craft_avg[list(set(gby+ ['YEAR','QUARTER']))].groupby(gby).aggregate(np.mean).reset_index(),how='left',on=gby)
     
      #merge segment carrier data
-    gby = ['MONTH','A1','A2','UNIQUE_CARRIER']
+    gby = [time_step_size,'A1','A2','UNIQUE_CARRIER']
     segs_cr = segs_cr.merge(t100_craft_avg[gby+ col_types[col_types.col_merge_type==1].col.tolist()].groupby(gby).aggregate(np.mean).reset_index(),how='left',on=gby)
      #merge segment carrier data
-    gby = ['MONTH','A1','A2','UNIQUE_CARRIER']
-    segs_cr = segs_cr.merge(t100_craft_avg[gby+['SEG_MONTH_PRESENCE']].groupby(gby).aggregate(np.mean).reset_index(),how='left',on=gby)
+    gby = [time_step_size,'A1','A2','UNIQUE_CARRIER']
+    segs_cr = segs_cr.merge(t100_craft_avg[gby+['SEG_PRESENCE']].groupby(gby).aggregate(np.mean).reset_index(),how='left',on=gby)
     
      #merge segment data
-    gby = ['MONTH','A1','A2']
+    gby = [time_step_size,'A1','A2']
     segs_cr = segs_cr.merge(t100_craft_avg[gby+ col_types[col_types.col_merge_type==2].col.tolist()].groupby(gby).aggregate(np.mean).reset_index(),how='left',on=gby)
     
      #merge segment data
-    gby = ['MONTH','UNIQUE_CARRIER']
+    gby = [time_step_size,'UNIQUE_CARRIER']
     segs_cr = segs_cr.merge(t100_craft_avg[gby+ col_types[col_types.col_merge_type==3].col.tolist()].groupby(gby).aggregate(np.mean).reset_index(),how='left',on=gby)
     
     segs_cr.fillna(0,inplace=True)
@@ -477,9 +510,9 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
                 related_carriers_invert[val] =  [key]
    
     # get cooperating carrier indicator vector for each carrier-market-month
-    grouped = t100_craft_avg.groupby(['MONTH','A1','A2'])
+    grouped = t100_craft_avg.groupby([time_step_size,'A1','A2'])
     carriers = grouped.apply(lambda x: x['UNIQUE_CARRIER'].tolist()).reset_index()
-    carriers = segs_cr.merge(carriers, how='left',on=['MONTH','A1','A2'])[0].tolist()
+    carriers = segs_cr.merge(carriers, how='left',on=[time_step_size,'A1','A2'])[0].tolist()
     carriers = [c if c==c else [] for c in carriers]    
     unique_carrier=segs_cr.UNIQUE_CARRIER.tolist()
     related_carriers_full = merge_two_dicts(related_carriers, related_carriers_invert)
@@ -503,18 +536,22 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
         uaco_start = datetime.strptime("08/2010", "%m/%Y")
         wnfl_start = datetime.strptime("04/2011", "%m/%Y")
         aaus_start = datetime.strptime("11/2013", "%m/%Y")
-        months=segs_cr.MONTH.tolist()
+        timesteps=segs_cr[time_step_size].tolist()
         merging_carriers = ['US','HP','DL','NW','UA','CO','WN','FL','AA']
       
         merging_partners = []
         ##merging_overlap_segment=[]
-        for carrier, market, month in zip(unique_carrier,carriers,months):
+        for carrier, market, timestep in zip(unique_carrier,carriers,timesteps):
             
             if (carrier not in  merging_carriers) or len(market)==1 :
                 merging_partners.append(np.array([]))
                 ##merging_overlap_segment.append(0)
             else:
-                date = datetime.strptime("/".join([str(month).rjust(2,"0"),str(year)]), "%m/%Y")  
+                # if quarter, use first month of that quarter
+                if time_step_size=='QUARTER':
+                    date = datetime.strptime("/".join([str(q_to_first_month[timestep]).rjust(2,"0"),str(year)]), "%m/%Y")  
+                else:
+                    date = datetime.strptime("/".join([str(timestep).rjust(2,"0"),str(year)]), "%m/%Y") 
                 coop_vec = []               
                 if date >=ushp_start and date < aaus_start and carrier=='US':
                     coop_vec = [1 if c=='HP' else 0 for c in market]
@@ -548,18 +585,18 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
 
     print("computing cooperative traffic...")
     # compute aggregate frequency and capacity of allied carriers by row
-    segs_cr['ALLIED_FREQ']= coop_sum('DAILY_FREQ',cooperators,segs_cr,t100_craft_avg)
-    segs_cr['ALLIED_SEATS']= coop_sum('SEATS',cooperators,segs_cr,t100_craft_avg)
-    segs_cr['ALLIED_PAX']= coop_sum('PASSENGERS',cooperators,segs_cr,t100_craft_avg)
+    segs_cr['ALLIED_FREQ']= coop_sum('DAILY_FREQ',cooperators,segs_cr,t100_craft_avg,time_step_size)
+    segs_cr['ALLIED_SEATS']= coop_sum('SEATS',cooperators,segs_cr,t100_craft_avg,time_step_size)
+    segs_cr['ALLIED_PAX']= coop_sum('PASSENGERS',cooperators,segs_cr,t100_craft_avg,time_step_size)
     segs_cr['ALLIED_PLAYERS']=[sum(r) for r in cooperators]
     
      # compute aggregate frequency and capacity of merging carriers by row
-    segs_cr['MERGING_FREQ']= coop_sum('DAILY_FREQ',merging_partners,segs_cr,t100_craft_avg)
-    segs_cr['MERGING_SEATS']= coop_sum('SEATS',merging_partners,segs_cr,t100_craft_avg)
+    segs_cr['MERGING_FREQ']= coop_sum('DAILY_FREQ',merging_partners,segs_cr,t100_craft_avg,time_step_size)
+    segs_cr['MERGING_SEATS']= coop_sum('SEATS',merging_partners,segs_cr,t100_craft_avg,time_step_size)
     segs_cr['MERGING_PLAYERS']=[sum(r) for r in merging_partners]
-    segs_cr['MERGING_PAX']= coop_sum('PASSENGERS',merging_partners,segs_cr,t100_craft_avg)
+    segs_cr['MERGING_PAX']= coop_sum('PASSENGERS',merging_partners,segs_cr,t100_craft_avg,time_step_size)
     #group to get segment-month properties
-    grouped = segs_cr.groupby(['MONTH','A1','A2'])
+    grouped = segs_cr.groupby([time_step_size,'A1','A2'])
     #merging carrier segment?
     segs_cr['MERGING_SEGMENT'] = grouped['MERGING_PLAYERS'].transform('sum')
     segs_cr['MERGING_SEGMENT']=  np.clip(segs_cr['MERGING_SEGMENT'],0,1)
@@ -624,7 +661,7 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
         wavgs_nonstop_market = weighted_average(db1b[db1b.MARKET_COUPONS==1],'MARKET_FARE','PASSENGERS',grby,'AVG_MKT_FARE_0S')
         wavgs_onestop_market = weighted_average(db1b[db1b.MARKET_COUPONS==2],'MARKET_FARE','PASSENGERS',grby,'AVG_MKT_FARE_1S')
         
-        #
+        
         #get carrier and general connections
         carrier_connects = db1b[['OPERATING_CARRIER',"A1","A2",'AIRPORT_GROUP']+['PASSENGERS','MARKET_COUPONS','MARKET_DISTANCE','ORIGIN']].groupby(['OPERATING_CARRIER',"A1","A2",'AIRPORT_GROUP']).aggregate({'PASSENGERS':np.sum,'ORIGIN':'count','MARKET_DISTANCE':np.mean,'MARKET_COUPONS':lambda x: x.iloc[0]}).reset_index().rename(columns={'ORIGIN': 'ROUTE_COUNT'})
         connects = db1b[['OPERATING_CARRIER',"A1","A2",'AIRPORT_GROUP']+['PASSENGERS','MARKET_COUPONS','MARKET_DISTANCE','ORIGIN']].groupby(["A1","A2",'AIRPORT_GROUP']).aggregate({'PASSENGERS':np.sum,'ORIGIN':'count','MARKET_DISTANCE':np.mean,'MARKET_COUPONS':lambda x: x.iloc[0]}).reset_index().rename(columns={'ORIGIN': 'ROUTE_COUNT'})
@@ -717,21 +754,17 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
     
     #merge with airport data
     print("merging segment data...")
-    segs_cr =segs_cr.merge(segs,how='left',on=['A1','A2','MONTH'])
+    segs_cr =segs_cr.merge(segs,how='left',on=['A1','A2',time_step_size])
     segs_cr.fillna(0, inplace=True)
     del segs
-   # ADD SEGS CR AND ALLIED CITY ROUTE
-     # match city market ids, any parellel? what about just one parellel?
-    ##t100_craft_avg['SORTED_CITY_MARKET_ID'] = t100_craft_avg.apply(lambda row: sorted([row.ORIGIN_CITY_MARKET_ID_SMALLER,row.ORIGIN_CITY_MARKET_ID_LARGER]), axis=1)
-    ##t100_craft_avg.groupby(['UNIQUE_CARRIER','MONTH','ORIGIN_CITY_MARKET_ID_SMALLER','ORIGIN_CITY_MARKET_ID_LARGER'])
-    #find duplicate city id pairs: how many identical city market does this airline serve
+    #check if airline is present at other markets with the same city
     print("finding matching city pairs...")
     od = segs_cr[['ORIGIN_CITY_MARKET_ID_SMALLER','ORIGIN_CITY_MARKET_ID_LARGER']].values
     od.sort(axis=1)
     od = pd.DataFrame(od,columns=["OCMID1","OCMID2"])
     segs_cr = pd.concat([segs_cr.reset_index(),od.reset_index()],axis=1)
-    shared_ocmid = segs_cr[['MONTH','UNIQUE_CARRIER',"OCMID1","OCMID2","SEG_MONTH_PRESENCE"]].groupby(['MONTH','UNIQUE_CARRIER',"OCMID1","OCMID2"]).aggregate(np.sum).rename(columns={'SEG_MONTH_PRESENCE':'SHARED_CITY_MARKET_ID_SEGS'}).reset_index()
-    segs_cr = segs_cr.merge(shared_ocmid,how='left',on=['MONTH','UNIQUE_CARRIER',"OCMID1","OCMID2"])
+    shared_ocmid = segs_cr[[time_step_size,'UNIQUE_CARRIER',"OCMID1","OCMID2","SEG_PRESENCE"]].groupby([time_step_size,'UNIQUE_CARRIER',"OCMID1","OCMID2"]).aggregate(np.sum).rename(columns={'SEG_PRESENCE':'SHARED_CITY_MARKET_ID_SEGS'}).reset_index()
+    segs_cr = segs_cr.merge(shared_ocmid,how='left',on=[time_step_size,'UNIQUE_CARRIER',"OCMID1","OCMID2"])
     #write outputs
     print("writing outputs...")
     t100_craft_avg.to_csv(output_file % year)
@@ -748,132 +781,6 @@ def nonstop_market_profile_monthly(output_file = "market_profiles/monthly_market
 
 
 
-def create_carrier_tensors():
-    create_compiled_table  =True
-    input_file = "processed_data/market_profile_%s.csv" 
-    airports = TAFM2017AirportList.origin.tolist()
-    years = range(2007,2008)
-    market_files = []
-    if create_compiled_table:
-        for year in years:
-            market_files.append(pd.read_csv(input_file % year))
-    market_files = pd.concat(market_files, axis=1)        
-    
-      #create adjaceny matrices
-    print("creating demand tensors...")
-    ###IF COSTS ARE EVER FIXED, USE PLACE TO COMBINE OBSERVED WITH HYPOTHETICAL (IN ALL PLAYED MARKETS) COSTS
-    t100_by_market = market_files[['YEAR','MONTH','SEG_PAX','A1','A2']].groupby(['YEAR','MONTH','A1','A2']).aggregate({'SEG_PAX':lambda x: x.iloc[0]}).reset_index()
-    t100_by_market_grouped = t100_by_market.groupby(['YEAR','MONTH'])    
-    demand_tensor = np.zeros([len(airports),len(airports),12*len(years)])   
-    i=0
-    for year in years: 
-       for month in range(1,13):
-            #get relevant data table
-            data_time_t = t100_by_market_grouped.get_group((year,month))
-            #convert to networkx undirected graph
-            G=nx.from_pandas_dataframe(data_time_t, 'A1', 'A2', edge_attr=['SEG_PAX'])
-            ##nx.write_edgelist(G,'netx_objs/carrier_net_demand_%s_%s.edgelist' % (year,month), data=['MARKET_TOT'])
-            #convert to numpy adjacency matrix weighted by frequency
-            D = nx.to_numpy_matrix(G, nodelist = range(0,len(airports)),weight='SEG_PAX')            
-            #add matrices to tensor at appropriate time step
-            demand_tensor[:,:,i] = D            
-            i+=1
-            
-            print("%s %s  demand adj mats done" % (year, month))
-    np.save('demand_tensors/ts_demand',demand_tensor )
-    t100_craft_avg_network_gb = market_files.groupby(['UNIQUE_CARRIER','MONTH','YEAR'])
-    for carrier in market_files.UNIQUE_CARRIER.unique().tolist():
-        #initialize adjaceny tensor
-        adjacency_tensor = np.zeros([len(airports),len(airports),12*len(years)])
-        ##print("creating adjaceny mats for %s" % carrier)
-        i = 0
-        for year in years: 
-            for month in range(1,13):
-                
-                try:
-                    cr_timestep_df  = t100_craft_avg_network_gb.get_group((carrier,  month, year))
-                except KeyError:
-                    pass
-                else:
-                          #convert to networkx undirected graph
-                    G=nx.from_pandas_dataframe(cr_timestep_df, 'A1', 'A2', edge_attr=['DAILY_FREQ'])
-                    ##nx.write_edgelist(G,'netx_objs/carrier_net_%s_%s_%s.edgelist' % (year,month,carrier), data=['DAILY_FREQ', 'FLIGHT_COST'])
-                    #convert to numpy adjacency matrix weighted by frequency
-                    A = nx.to_numpy_matrix(G, nodelist = range(0,len(airports)),weight='DAILY_FREQ')                  
-                    #add matrices to tensor at appropriate time step
-                    adjacency_tensor[:,:,i] = A
-                    
-                    
-                i+=1
-            #next time step
-            
-           
-                
-        # save tensors
-        np.save('freq_tensors/ts_freq_%s' % carrier,adjacency_tensor )
-    change_class_threshold = 1 # magnitude of frequency change between months to be classed as frequency change
-    carriers_of_interest = ['WN','DL','UA','AA','US']
-    airports = sorted(node_sets['top100_2014'])    
-    entry_dict = {}
-    total_entries = 0
-    entry_zero_offset = 12 # assume that if entry, airline has been out 12 months
-    
-    for carrier in carriers_of_interest:
-        adjacency_tensor = np.load('freq_tensors/ts_freq_%s.npy' % carrier )
-        # is airline ever present in market?
-        #create C-ordered flattened index
-        flattened_index = [(i,j) for i in airports for j in airports ]
-        market_presence_mat = adjacency_tensor.sum(axis=2).astype(bool)
-        #don't double count markets!
-        market_presence_mat[np.tril_indices(len(airports))] =False
-       
-        flattened_freq = adjacency_tensor.reshape(-1, adjacency_tensor.shape[-1])
-        ###flattened_cost = cost_tensor.reshape(-1, cost_tensor.shape[-1])
-        flattened_market_presence_index = market_presence_mat.flatten()
-        freq_series_text_index = np.array(flattened_index)[flattened_market_presence_index]
-        #valued time series
-        FREQ_SERIES= flattened_freq[flattened_market_presence_index]
-        ###COST_SERIES = flattened_cost[flattened_market_presence_index]
-       
-        
-        #detect entries  
-        time_steps = FREQ_SERIES.shape[1]
-        viable_markets_count = FREQ_SERIES.shape[0]
-        entries = np.zeros([viable_markets_count,time_steps])
-        changes =np.zeros([viable_markets_count,time_steps]) 
-        change_classes =np.zeros([viable_markets_count,time_steps])
-        for i in range(0,viable_markets_count):# for each relelvant market   
-            for j in range(0,time_steps-1):            
-                if j < entry_zero_offset:
-                    pass
-                    ##previous_freqs_sum = sum(FREQ_SERIES[i,0:j+1])
-                else:
-                    previous_freqs_sum =sum(FREQ_SERIES[i,j-(entry_zero_offset):j+1])
-                    if previous_freqs_sum == 0 and FREQ_SERIES[i,j+1] > 1:
-                        entries[i,j+1] = 1
-            #additionally, calculate changes for each
-            change  = np.diff(FREQ_SERIES[i,:])
-            # classify changes according to cuttoff  
-            change_class = np.zeros(change.shape)
-            change_class[change>=change_class_threshold]=1 #one if increase
-            change_class[change<=-change_class_threshold]=2
-            #save change classes in matrix (assume no change from t-1 to t0)
-            changes[i,1:] = change
-            change_classes[i,1:] = change_class
-            
-        '''
-        #Create plot of WN Entries
-        entry_ind = entries.sum(axis=1).astype(bool)
-        plt.plot(np.tile(list(range(0,105)),[FREQ_SERIES.shape[0],1])[entry_ind,:].T,FREQ_SERIES[entry_ind,:].T)
-        plt.xlabel('Time Step')
-        plt.ylabel('Daily Frequency')
-        plt.title('124 WN markets with entry, 2007-2015')
-        '''
-        new_entries = entries.sum().sum()
-        total_entries += new_entries
-        print('%s has %s entries' % (carrier, new_entries))
-        entry_dict[carrier] = {'num_entries':new_entries,'mkt_index':freq_series_text_index,'freq_mat': FREQ_SERIES, 'entry_mat':entries , 'change_mat':changes,'xclass_mat':change_classes}
-
 
 '''
 function to create node features with networkx package
@@ -884,29 +791,29 @@ inputs:
     edge_attr: edge attibute/weight of interest
     feature_name: desired name of feature (with _SMALLER/_LARGER appended for nodes with lesser/greater carrier traffic, respectively)
 '''
-def create_node_network_feature(df,df_to_merge,networkx_func,edge_attr,feature_name):
+def create_node_network_feature(df,df_to_merge,networkx_func,edge_attr,feature_name,time_step_size):
          #function to calculate node attribute for each node
         def apply_graph_func_node(gby, networkx_func, edge_attr):
             G = nx.from_pandas_dataframe(gby, source='A1',target='A2',edge_attr=edge_attr).to_undirected()
             network_dict =networkx_func(G)
             return pd.Series({'PORT':network_dict.keys(),'NODEATTR':network_dict.values()})
         #apply function to overall table on a month-carrier basis
-        df_gb = df.groupby(['UNIQUE_CARRIER','MONTH']).apply(apply_graph_func_node, networkx_func,edge_attr)
+        df_gb = df.groupby(['UNIQUE_CARRIER',time_step_size]).apply(apply_graph_func_node, networkx_func,edge_attr)
         
         #reformulate into a proper data frame
         port_table = pd.melt(df_gb.PORT.apply(list).apply(pd.Series).reset_index(), 
-             id_vars=['UNIQUE_CARRIER', 'MONTH'],
-             value_name='PORT').set_index(['UNIQUE_CARRIER', 'MONTH']).drop('variable', axis=1).dropna()
+             id_vars=['UNIQUE_CARRIER', time_step_size],
+             value_name='PORT').set_index(['UNIQUE_CARRIER', time_step_size]).drop('variable', axis=1).dropna()
         stat_table = pd.melt(df_gb.NODEATTR.apply(list).apply(pd.Series).reset_index(), 
-             id_vars=['UNIQUE_CARRIER', 'MONTH'],
-             value_name='NODEATTR').set_index(['UNIQUE_CARRIER', 'MONTH']).drop('variable', axis=1).dropna()
+             id_vars=['UNIQUE_CARRIER', time_step_size],
+             value_name='NODEATTR').set_index(['UNIQUE_CARRIER', time_step_size]).drop('variable', axis=1).dropna()
         port_stat_table = pd.concat([port_table.reset_index(),stat_table.reset_index()['NODEATTR']], axis=1)
         #merge node data to larger airports in node pair
-        df_to_merge = pd.merge(df_to_merge,port_stat_table,how='left',left_on = ['MONTH','UNIQUE_CARRIER','ACR_LARGER'],right_on = ['MONTH','UNIQUE_CARRIER','PORT'])
+        df_to_merge = pd.merge(df_to_merge,port_stat_table,how='left',left_on = [time_step_size,'UNIQUE_CARRIER','ACR_LARGER'],right_on = [time_step_size,'UNIQUE_CARRIER','PORT'])
         df_to_merge.rename(columns={'NODEATTR':feature_name + '_SMALLER'},inplace=True)
         del df_to_merge['PORT']
         #merge node data to smaller airports
-        df_to_merge = pd.merge(df_to_merge,port_stat_table,how='left',left_on = ['MONTH','UNIQUE_CARRIER','ACR_SMALLER'],right_on = ['MONTH','UNIQUE_CARRIER','PORT'])
+        df_to_merge = pd.merge(df_to_merge,port_stat_table,how='left',left_on = [time_step_size,'UNIQUE_CARRIER','ACR_SMALLER'],right_on = [time_step_size,'UNIQUE_CARRIER','PORT'])
         df_to_merge.rename(columns={'NODEATTR':feature_name + '_LARGER'},inplace=True)
         del df_to_merge['PORT']
         #PERHAPS DROP NA
@@ -923,7 +830,7 @@ inputs:
     edge_attr: edge attibute/weight of interest
     feature_name: desired name of feature 
 '''
-def create_edge_network_feature(df,networkx_func,edge_attr,feature_name):
+def create_edge_network_feature(df,networkx_func,edge_attr,feature_name,time_step_size):
          #function to calculate node attribute for each node
         def apply_graph_func_edge(gby, networkx_func, edge_attr):
             G = nx.from_pandas_dataframe(gby, source='A1',target='A2',edge_attr=edge_attr).to_undirected()
@@ -935,22 +842,22 @@ def create_edge_network_feature(df,networkx_func,edge_attr,feature_name):
                 return pd.Series({'A1':gby.A1.tolist(),'A2':gby.A2.tolist(), 'EDGEATTR':np.zeros(len(gby)).tolist()})
            
             #apply function to overall table on a month-carrier basis
-        df_gb = df.groupby(['UNIQUE_CARRIER','MONTH']).apply(apply_graph_func_edge, networkx_func,edge_attr)
+        df_gb = df.groupby(['UNIQUE_CARRIER',time_step_size]).apply(apply_graph_func_edge, networkx_func,edge_attr)
         
         #reformulate into a proper data frame
         node1_table = pd.melt(df_gb.A1.apply(list).apply(pd.Series).reset_index(), 
-             id_vars=['UNIQUE_CARRIER', 'MONTH'],
-             value_name='A1').set_index(['UNIQUE_CARRIER', 'MONTH']).drop('variable', axis=1).dropna()
+             id_vars=['UNIQUE_CARRIER', time_step_size],
+             value_name='A1').set_index(['UNIQUE_CARRIER', time_step_size]).drop('variable', axis=1).dropna()
         node2_table = pd.melt(df_gb.A2.apply(list).apply(pd.Series).reset_index(), 
-             id_vars=['UNIQUE_CARRIER', 'MONTH'],
-             value_name='A2').set_index(['UNIQUE_CARRIER', 'MONTH']).drop('variable', axis=1).dropna()
+             id_vars=['UNIQUE_CARRIER', time_step_size],
+             value_name='A2').set_index(['UNIQUE_CARRIER', time_step_size]).drop('variable', axis=1).dropna()
         stat_table = pd.melt(df_gb.EDGEATTR.apply(list).apply(pd.Series).reset_index(), 
-             id_vars=['UNIQUE_CARRIER', 'MONTH'],
-             value_name='EDGEATTR').set_index(['UNIQUE_CARRIER', 'MONTH']).drop('variable', axis=1).dropna()
+             id_vars=['UNIQUE_CARRIER', time_step_size],
+             value_name='EDGEATTR').set_index(['UNIQUE_CARRIER', time_step_size]).drop('variable', axis=1).dropna()
         
         port_stat_table = pd.concat([node1_table.reset_index(),node2_table.reset_index()['A2'],stat_table.reset_index()['EDGEATTR']], axis=1)
         #merge node data to larger airports in node pair
-        df = pd.merge(df,port_stat_table,how='left',on = ['MONTH','UNIQUE_CARRIER','A1','A2'])
+        df = pd.merge(df,port_stat_table,how='left',on = [time_step_size,'UNIQUE_CARRIER','A1','A2'])
         df.rename(columns={'EDGEATTR':feature_name},inplace=True)
         return df
     
@@ -958,7 +865,7 @@ def create_edge_network_feature(df,networkx_func,edge_attr,feature_name):
 '''
 function to create feature for entire carrier network
 '''
-def create_full_network_feature(df,networkx_func,edge_attr,feature_name):
+def create_full_network_feature(df,networkx_func,edge_attr,feature_name,time_step_size):
          #function to calculate node attribute for each node
         def apply_graph_func(gby, networkx_func, edge_attr):
             G = nx.from_pandas_dataframe(gby, source='A1',target='A2',edge_attr=edge_attr).to_undirected()
@@ -967,10 +874,10 @@ def create_full_network_feature(df,networkx_func,edge_attr,feature_name):
                 network_val = 0
             return network_val
             #apply function to overall table on a month-carrier basis
-        df_gb = df.groupby(['UNIQUE_CARRIER','MONTH']).apply(apply_graph_func, networkx_func,edge_attr)
+        df_gb = df.groupby(['UNIQUE_CARRIER',time_step_size]).apply(apply_graph_func, networkx_func,edge_attr)
         
          #merge node data to larger airports in node pair
-        df = pd.merge(df,df_gb.reset_index(),how='left',on = ['MONTH','UNIQUE_CARRIER'])
+        df = pd.merge(df,df_gb.reset_index(),how='left',on = [time_step_size,'UNIQUE_CARRIER'])
         df.rename(columns={0:feature_name},inplace=True)
         return df
 '''
@@ -1030,10 +937,10 @@ def merge_two_dicts(x, y):
 '''
 helper function to compute total allied activity (of type sum_col) in a carrier-market-month
 '''
-def coop_sum(sum_col,cooperators,segs_cr,t100_craft_avg):
-    grouped = t100_craft_avg.groupby(['MONTH','A1','A2'])
+def coop_sum(sum_col,cooperators,segs_cr,t100_craft_avg,time_step_size):
+    grouped = t100_craft_avg.groupby([time_step_size,'A1','A2'])
     sum_cols = grouped.apply(lambda x: x[sum_col].tolist()).reset_index()
-    sum_cols = segs_cr.merge(sum_cols, how='left',on=['MONTH','A1','A2'])[0].tolist()
+    sum_cols = segs_cr.merge(sum_cols, how='left',on=[time_step_size,'A1','A2'])[0].tolist()
     summed_cols = []
     for coop, col in zip(cooperators, sum_cols):
         if coop.size == 0:
@@ -1060,12 +967,21 @@ def haversine(lon1, lat1, lon2, lat2):
     km = 6367 * c
     mi = 0.621371*km
     return mi
+'''
+helper functions to count edges and nodes
+'''
+def nx_edge_count(G):
+        return len(G.edges())
+def nx_node_count(G):
+        return len(G.nodes())
+   
 
 '''
-function for creating numpy tensors of network characteristics (needs cleaning up/generalization)
+function for creating numpy tensors of network characteristics (needs cleaning up/generalization), 
+currently only for month-size time steps, 
 '''
 
-def create_carrier_tensors():
+def create_carrier_tensors(time_step_size,nodes=small_node_sets['top100_2014']):
     create_compiled_table  =True
     input_file = "processed_data/market_profile_%s.csv" 
     airports = TAFM2017AirportList.origin.tolist()
@@ -1078,9 +994,8 @@ def create_carrier_tensors():
     
       #create adjaceny matrices
     print("creating demand tensors...")
-    ###IF COSTS ARE EVER FIXED, USE PLACE TO COMBINE OBSERVED WITH HYPOTHETICAL (IN ALL PLAYED MARKETS) COSTS
-    t100_by_market = market_files[['YEAR','MONTH','SEG_PAX','A1','A2']].groupby(['YEAR','MONTH','A1','A2']).aggregate({'SEG_PAX':lambda x: x.iloc[0]}).reset_index()
-    t100_by_market_grouped = t100_by_market.groupby(['YEAR','MONTH'])    
+    t100_by_market = market_files[['YEAR',time_step_size,'SEG_PAX','A1','A2']].groupby(['YEAR',time_step_size,'A1','A2']).aggregate({'SEG_PAX':lambda x: x.iloc[0]}).reset_index()
+    t100_by_market_grouped = t100_by_market.groupby(['YEAR',time_step_size])    
     demand_tensor = np.zeros([len(airports),len(airports),12*len(years)])   
     i=0
     for year in years: 
@@ -1098,7 +1013,7 @@ def create_carrier_tensors():
             
             print("%s %s  demand adj mats done" % (year, month))
     np.save('demand_tensors/ts_demand',demand_tensor )
-    t100_craft_avg_network_gb = market_files.groupby(['UNIQUE_CARRIER','MONTH','YEAR'])
+    t100_craft_avg_network_gb = market_files.groupby(['UNIQUE_CARRIER',time_step_size,'YEAR'])
     for carrier in market_files.UNIQUE_CARRIER.unique().tolist():
         #initialize adjaceny tensor
         adjacency_tensor = np.zeros([len(airports),len(airports),12*len(years)])
@@ -1130,7 +1045,7 @@ def create_carrier_tensors():
         np.save('freq_tensors/ts_freq_%s' % carrier,adjacency_tensor )
     change_class_threshold = 1 # magnitude of frequency change between months to be classed as frequency change
     carriers_of_interest = ['WN','DL','UA','AA','US']
-    airports = sorted(node_sets['top100_2014'])    
+    airports = sorted(nodes)    
     entry_dict = {}
     total_entries = 0
     entry_zero_offset = 12 # assume that if entry, airline has been out 12 months
@@ -1451,16 +1366,52 @@ def deprecated_feature_construction(entry_dict,node_sets):
 # run parser for all years
 
 def run_parser():
+    session = "tafm_q"
     for year in range(2007,2017):
-        t = nonstop_market_profile_monthly(output_file = "../processed_data/market_profile_%s.csv",year = year, months=range(1,13), \
-    t100_fn="T100_SEGMENTS_%s.csv",p52_fn="SCHEDULE_P52_%s.csv", non_directional=True, t100_avgd_fn="processed_data/t100_avgd_m%s.csv", merge_HP=True, merge_NW=True, \
-    t100_summed_fn = 'processed_data/t100_summed_m%s.csv', t100_craft_avg_fn='processed_data/t100_craft_avg_m%s.csv',\
-    ignore_mkts = [], merger_carriers=True,  craft_freq_cuttoff = .01,max_competitors=100,top_n_carriers = 15,\
-    freq_cuttoff = .5, ms_cuttoff=.05, yearly_regression_file = "../processed_data/regression_file_%s.csv",\
+        t = nonstop_market_profile_monthly(output_file = ("../processed_data/market_profile_%s" % session) +"_%s.csv",\
+    year = year, months=range(1,13), t100_fn="T100_SEGMENTS_%s.csv",\
+    p52_fn="SCHEDULE_P52_%s.csv", non_directional=True, merge_HP=True, merge_NW=True,ignore_mkts = [],\
+    merger_carriers=True,  craft_freq_cuttoff = .01,max_competitors=100,top_n_carriers = 15,\
+    freq_cuttoff = .5, ms_cuttoff=.05, yearly_regression_file = ("../processed_data/regression_file_%s" % session)+ "_%s.csv",\
     fs_cuttoff = .05,db1b_fn="DB1B_MARKETS_%s_Q%s.csv", rc_name = 'related_carriers_dict_%s.csv',\
-    only_big_carriers=False, airports = TAFM2017AirportList.origin.tolist() , airport_data = TAFM2017AirportList,\
+    only_big_carriers=False, airports = TAFM2017AirportList.origin.tolist(),\
     node_feature_list = [(nx.degree_centrality,'DAILY_FREQ','DEG_CENT')],\
-    edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')], \
+    edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')],\
+    full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_edge_count,'DAILY_FREQ','NODE_COUNT')],\
+    port_info = port_info,\
+    lat_dict = lat_dict,\
+    lon_dict = lon_dict ,\
+    time_step_size = 'QUARTER')
+    
+        
+    session = "top100_m"
+    for year in range(2007,2017):
+        t = nonstop_market_profile_monthly(output_file = ("../processed_data/market_profile_%s" % session) +"_%s.csv",\
+    year = year, months=range(1,13), t100_fn="T100_SEGMENTS_%s.csv",\
+    p52_fn="SCHEDULE_P52_%s.csv", non_directional=True, merge_HP=True, merge_NW=True,ignore_mkts = [],\
+    merger_carriers=True,  craft_freq_cuttoff = .01,max_competitors=100,top_n_carriers = 15,\
+    freq_cuttoff = .5, ms_cuttoff=.05, yearly_regression_file = ("../processed_data/regression_file_%s" % session)+ "_%s.csv",\
+    fs_cuttoff = .05,db1b_fn="DB1B_MARKETS_%s_Q%s.csv", rc_name = 'related_carriers_dict_%s.csv',\
+    only_big_carriers=False, airports = small_node_sets['top100_2014'],\
+    node_feature_list = [(nx.degree_centrality,'DAILY_FREQ','DEG_CENT')],\
+    edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')],\
+    full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_edge_count,'DAILY_FREQ','NODE_COUNT')],\
+    port_info = port_info,\
+    lat_dict = lat_dict,\
+    lon_dict = lon_dict ,\
+    time_step_size = 'MONTH')
+        
+    session = "ope35_m"
+    for year in range(2007,2017):
+        t = nonstop_market_profile_monthly(output_file = ("../processed_data/market_profile_%s" % session) +"_%s.csv",\
+    year = year, months=range(1,13), t100_fn="T100_SEGMENTS_%s.csv",\
+    p52_fn="SCHEDULE_P52_%s.csv", non_directional=True, merge_HP=True, merge_NW=True,ignore_mkts = [],\
+    merger_carriers=True,  craft_freq_cuttoff = .01,max_competitors=100,top_n_carriers = 15,\
+    freq_cuttoff = .5, ms_cuttoff=.05, yearly_regression_file = ("../processed_data/regression_file_%s" % session)+ "_%s.csv",\
+    fs_cuttoff = .05,db1b_fn="DB1B_MARKETS_%s_Q%s.csv", rc_name = 'related_carriers_dict_%s.csv',\
+    only_big_carriers=False, airports = small_node_sets['ope35_sansHLN'],\
+    node_feature_list = [(nx.degree_centrality,'DAILY_FREQ','DEG_CENT')],\
+    edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')],\
     full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_edge_count,'DAILY_FREQ','NODE_COUNT')],\
     port_info = port_info,\
     lat_dict = lat_dict,\

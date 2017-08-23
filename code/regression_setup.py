@@ -33,11 +33,12 @@ def create_feature_categories():
     #NODE CARRRIER FEATURES
     #LOAD FEATURES
 def data_load():
-    years = range(2007,2010)   
-    file_name = "../processed_data/regression_files/regression_file_%s.csv"
+    session="ope35_m
+    years = range(2007,2017)   
+    file_name = ("../processed_data/regression_file_%s" % session)+ "_%s.csv"
     
     features = ['DAILY_FREQ','COMPETING_FREQ','SEG_PAX','GC_DISTANCE','SHARED_CITY_MARKET_ID_SEGS','ENPLANEMENTS_LARGER','ENPLANEMENTS_SMALLER','EDGE_COUNT','NODE_COUNT','IS_LOWCOST','MAIN_LINE','JACCARD_COEF','DEG_CENT_SMALLER','DEG_CENT_LARGER','SEG_PORTS_OCCUPIED']
-    structural = ['YEAR','MONTH','QUARTER','UNIQUE_CARRIER','A1','A2','SEG_MONTH_PRESENCE']
+    structural = ['YEAR','MONTH','QUARTER','UNIQUE_CARRIER','A1','A2','SEG_PRESENCE']
     full_df = []
     for year in years:
         full_df.append(pd.read_csv(file_name % year,usecols=structural+features))
@@ -50,7 +51,7 @@ def lagged_vars(full_df,features):
     #dictionary of variables and lists of offsets to create
     lagged_features = {'SEG_PAX':[1,2],'DAILY_FREQ':[1,2],'COMPETING_FREQ':[1,2] }
     training_target_offset = 1
-    training_target = 'SEG_MONTH_PRESENCE'
+    training_target = 'SEG_PRESENCE'
     #create predication (for training) variable
     lag_gb = full_df.groupby(['UNIQUE_CARRIER','A1','A2'])
     
@@ -60,25 +61,30 @@ def lagged_vars(full_df,features):
     ###full_df = pd.merge(full_df,shift_target.reset_index().drop('level_3',1),how='right',on=['UNIQUE_CARRIER','A1','A2'])
     for key, vals in lagged_features.items():
         for val in vals:
+            lag_gb = full_df.groupby(['UNIQUE_CARRIER','A1','A2'])
             full_df[key+'_LAG'+ str(val)] = lag_gb[key].shift(val)       
             full_df = full_df.dropna(subset=[key+'_LAG'+ str(val)])
     return full_df   
 
-def diagnostic_regression(full_df,training_target_features):    
-    #ALLOW FOR CATEGORICAL/CODING
+def diagnostic_regression(full_df,training_target,features):  
+   
     X = full_df.loc[:,features].values
     Y = full_df.loc[:,[training_target+'_FORECAST']].values.flatten()
     #NORMALIZE DATA!!
-    #MAKE SURE NODE COUNT AND EDGE COUNT ARENT EXALLTY THE SAME...THEY ARE, RECALCULATE
-    # AND, MAKE A DATA SET WITH A SMALLER NUMBER OF AIRPORTS
-    # and make networks
+  
     logreg = linear_model.LogisticRegression(class_weight ='balanced')
     #fit model with data
     logreg.fit(X,Y)
     Y_pred_train = logreg.predict(X)
+    #make a coef printer
     return logreg, confusion_matrix(Y,Y_pred_train)
 
 def create_entries():
+  
+    pass
+
+def create_exits():
+  
     pass
 
     
