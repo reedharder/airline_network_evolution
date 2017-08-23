@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 @author: Reed
+
+ function "nonstop_market_profile_monthly" generates a full feature file for regression/prediction of presence vs absence
+ and can be run as a stant alone. Run entire file, and then run function in a script with desired parameters
 """
 import os
 import numpy as np
