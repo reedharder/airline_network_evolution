@@ -35,7 +35,7 @@ def create_feature_categories():
 def data_load():
     session="ope35_m
     years = range(2007,2017)   
-    file_name = ("../processed_data/regression_file_%s" % session)+ "_%s.csv"
+    file_name = ("../processed_data/regression_files/regression_file_%s" % session)+ "_%s.csv"
     
     features = ['DAILY_FREQ','COMPETING_FREQ','SEG_PAX','GC_DISTANCE','SHARED_CITY_MARKET_ID_SEGS','ENPLANEMENTS_LARGER','ENPLANEMENTS_SMALLER','EDGE_COUNT','NODE_COUNT','IS_LOWCOST','MAIN_LINE','JACCARD_COEF','DEG_CENT_SMALLER','DEG_CENT_LARGER','SEG_PORTS_OCCUPIED']
     structural = ['YEAR','MONTH','QUARTER','UNIQUE_CARRIER','A1','A2','SEG_PRESENCE']
@@ -50,7 +50,7 @@ def lagged_vars(full_df,features):
     forecast_timestep = 'MONTH'
     #dictionary of variables and lists of offsets to create
     lagged_features = {'SEG_PAX':[1,2],'DAILY_FREQ':[1,2],'COMPETING_FREQ':[1,2] }
-    training_target_offset = 1
+    training_target_offset = 3 # one quarter ahead
     training_target = 'SEG_PRESENCE'
     #create predication (for training) variable
     lag_gb = full_df.groupby(['UNIQUE_CARRIER','A1','A2'])
@@ -79,9 +79,16 @@ def diagnostic_regression(full_df,training_target,features):
     #make a coef printer
     return logreg, confusion_matrix(Y,Y_pred_train)
 
-def create_entries():
-  
-    pass
+def create_entries(full_df,pre_window=12,post_window=3):
+    mavg = pd.rolling_mean(pd.Series(test_1),pre_window)
+    entry_possible = mavg.shift(1)
+    #should have entry 15 and 3rd to last
+    entry_pre_check = np.where((entry_possible==0) & (mavg>0),1,0)
+    # to check if airline remains at least one quarter...convert 1s to zeros, use moving average again
+    presence_reverse = 1-test_1
+    mavg_reverse = pd.rolling_mean(pd.Series(presence_reverse),post_window)
+    out = np.where((mavg_reverse.shift(-(post_window-1))==0) & (entry_pre_check==1),1,0)
+        
 
 def create_exits():
   

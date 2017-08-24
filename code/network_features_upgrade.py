@@ -1380,7 +1380,7 @@ def run_parser():
     only_big_carriers=False, airports = TAFM2017AirportList.origin.tolist(),\
     node_feature_list = [(nx.degree_centrality,'DAILY_FREQ','DEG_CENT')],\
     edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')],\
-    full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_edge_count,'DAILY_FREQ','NODE_COUNT')],\
+    full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_node_count,'DAILY_FREQ','NODE_COUNT')],\
     port_info = port_info,\
     lat_dict = lat_dict,\
     lon_dict = lon_dict ,\
@@ -1398,7 +1398,7 @@ def run_parser():
     only_big_carriers=False, airports = small_node_sets['top100_2014'],\
     node_feature_list = [(nx.degree_centrality,'DAILY_FREQ','DEG_CENT')],\
     edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')],\
-    full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_edge_count,'DAILY_FREQ','NODE_COUNT')],\
+    full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_node_count,'DAILY_FREQ','NODE_COUNT')],\
     port_info = port_info,\
     lat_dict = lat_dict,\
     lon_dict = lon_dict ,\
@@ -1415,7 +1415,7 @@ def run_parser():
     only_big_carriers=False, airports = small_node_sets['ope35_sansHLN'],\
     node_feature_list = [(nx.degree_centrality,'DAILY_FREQ','DEG_CENT')],\
     edge_feature_list = [(nx.jaccard_coefficient,'DAILY_FREQ','JACCARD_COEF')],\
-    full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_edge_count,'DAILY_FREQ','NODE_COUNT')],\
+    full_feature_list=[(nx.transitivity,'DAILY_FREQ','TRANSITIVITY'),(nx_edge_count,'DAILY_FREQ','EDGE_COUNT'),(nx_node_count,'DAILY_FREQ','NODE_COUNT')],\
     port_info = port_info,\
     lat_dict = lat_dict,\
     lon_dict = lon_dict ,\
